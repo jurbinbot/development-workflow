@@ -158,17 +158,26 @@ A development workflow application that guides ideas from conception to producti
 
 ---
 
-## Technology Choices (Proposed)
+## Technology Choices (Confirmed)
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| Frontend | Next.js 14+ | App router, SSR, great DX |
-| Backend | Bun + Hono | Fast, TypeScript-native |
-| Database | PostgreSQL | Production-grade, relational |
-| ORM | Drizzle | Lightweight, TypeScript-first |
-| Container | Docker + Buildx | Standard, multi-platform |
-| K8s | kubectl + Helm | Declarative, reproducible |
-| Service Mesh | Skupper | Active-active multi-cluster |
+| Frontend | Next.js 14+ (App Router) | SSR/SSG flexibility, React Server Components, excellent DX |
+| Styling | Tailwind CSS + shadcn/ui | Rapid UI development, consistent design system, accessible |
+| State | Zustand + TanStack Query | Lightweight local state, powerful async state management |
+| Backend | Bun + Hono | Ultra-fast runtime, TypeScript-native, minimal footprint |
+| Database | SQLite (dev) / PostgreSQL (prod) | Zero setup locally, production-grade in K8s |
+| ORM | Drizzle | SQL-like syntax, type-safe, zero runtime overhead |
+| Auth | Better Auth | Modern, session-based, built-in user management |
+| LLM | Ollama API | Self-hosted, no API costs, model flexibility |
+| Registry | GitHub Container Registry | Integrated with repo, free for public |
+| CI/CD | GitHub Actions | Native integration, builds images, updates ArgoCD |
+| GitOps | ArgoCD (existing) | Declarative, automated deployments |
+| Service Mesh | Skupper (existing) | Cross-cluster communication already configured |
+
+**Infrastructure:** Deploying to existing k3s clusters with ArgoCD and Skupper pre-installed.
+
+**Details:** See [docs/TECH_STACK.md](docs/TECH_STACK.md) for full architecture documentation.
 
 ---
 
@@ -210,12 +219,15 @@ A development workflow application that guides ideas from conception to producti
 
 ---
 
-## Questions for Clarification
+## Decisions Made
 
-1. **Frontend preference?** React/Next.js, Vue/Nuxt, or other?
-2. **Backend preference?** Node.js/Bun, Go, Python, or other?
-3. **Database preference?** PostgreSQL, MySQL, MongoDB, or other?
-4. **Cluster count?** How many Kubernetes clusters in the active-active setup?
-5. **AI provider?** OpenAI, Anthropic, local LLM, or multi-provider?
-6. **Authentication?** Built-in auth, OAuth, or integrate with existing IdP?
-7. **Existing infrastructure?** Any current K8s clusters, registries, or CI/CD to integrate?
+- **Frontend:** Next.js 14+ with App Router, Tailwind CSS, shadcn/ui
+- **Backend:** Bun + Hono framework with Drizzle ORM
+- **Database:** SQLite (development), PostgreSQL (production)
+- **LLM:** Ollama API (self-hosted)
+- **Authentication:** Built-in with default admin user
+- **Clusters:** Deploying to existing k3s clusters
+- **GitOps:** ArgoCD (already configured)
+- **Service Mesh:** Skupper (already installed)
+- **Registry:** GitHub Container Registry (ghcr.io)
+- **CI/CD:** GitHub Actions (builds image, pushes to GHCR, ArgoCD syncs)
