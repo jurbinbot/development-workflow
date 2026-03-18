@@ -1,0 +1,54 @@
+# Development Workflow API
+FROM oven/bun:1.1-alpine AS base
+
+# Install dependencies stage
+FROM base AS deps
+WORKDIR /app
+
+# Copy package files
+COPY package.json bun.lockb* ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/api/package.json ./apps/api/
+
+# Install dependencies
+RUN bun install --frozen-lockfile
+
+# Build shared package
+FROM deps AS build-shared
+WORKDIR /app
+COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun run build
+
+# Build API
+FROM build-shared AS build
+WORKDIR /app
+COPY apps/api ./apps/api
+COPY --from=build-shared /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build-shared /app/packages/shared/package.json ./packages/shared/
+RUN cd apps/api && bun run build
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 devworkflow
+
+# Copy built files
+COPY --from=build /app/apps/api/dist ./dist
+COPY --from=build /app/apps/api/package.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build /app/packages/shared/package.json ./packages/shared/
+
+# Create data directory for SQLite
+RUN mkdir -p /app/data && chown -R devworkflow:nodejs /app/data
+
+USER devworkflow
+
+EXPOSE 3001
+
+CMD ["bun", "run", "dist/index.js"]

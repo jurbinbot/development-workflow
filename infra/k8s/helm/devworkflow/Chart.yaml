@@ -1,0 +1,9 @@
+apiVersion: v2
+name: devworkflow
+description: A Helm chart for Development Workflow application
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: devworkflow
+    email: support@example.com

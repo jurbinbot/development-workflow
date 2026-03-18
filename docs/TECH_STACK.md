@@ -319,23 +319,71 @@ jobs:
 
 ---
 
+## Configuration Management
+
+**All configuration is externalized. No secrets or sensitive data in the repository.**
+
+### Environment Variables (Docker/Local)
+
+```bash
+# API Configuration
+DATABASE_URL=postgresql://user:pass@host:5432/devworkflow
+SESSION_SECRET=<random-256-bit-secret>
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=<secure-password>
+OLLAMA_BASE_URL=http://ollama:11434
+OLLAMA_MODEL=llama3.1:8b
+
+# Web Configuration
+NEXT_PUBLIC_API_URL=http://localhost:3001
+```
+
+### Kubernetes Configuration
+
+| Config Type | Resource | Contents |
+|------------|----------|----------|
+| App Config | ConfigMap | Non-sensitive settings (API URLs, feature flags, model names) |
+| Secrets | Secret | DATABASE_URL, SESSION_SECRET, ADMIN_PASSWORD, OLLAMA credentials |
+| Cluster Config | ConfigMap | Cluster endpoints, contexts, environment labels |
+
+### Secret Management
+
+- **Development:** `.env` files (gitignored, use `.env.example` as template)
+- **Production:** Kubernetes Secrets (sealed with Sealed Secrets or managed by External Secrets Operator)
+- **CI/CD:** GitHub Actions secrets for build-time injection
+- **Never commit:** passwords, API keys, tokens, certificates
+
+```yaml
+# Example Kubernetes Secret (sealed)
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: devworkflow-secrets
+spec:
+  encryptedData:
+    DATABASE_URL: <sealed-value>
+    SESSION_SECRET: <sealed-value>
+    ADMIN_PASSWORD: <sealed-value>
+```
+
+---
+
 ## Key Features
 
 ### Built-in Admin User
 
-```typescript
-// Seed script creates default admin
-const defaultAdmin = {
-  email: 'admin@development-workflow.local',
-  password: await hash(process.env.ADMIN_PASSWORD || 'changeme'),
-  name: 'Administrator',
-  role: 'admin'
-};
+Admin user is created on first startup using environment variables:
+
+```bash
+# Required for initial admin setup
+ADMIN_EMAIL=<admin-email>
+ADMIN_PASSWORD=<secure-password>
 ```
 
 - Admin can create/edit/delete users
 - Admin can assign roles (admin, user, viewer)
 - Password reset flow for all users
+- Credentials only exist in runtime environment, never in code
 
 ### Cluster Management in Planning
 

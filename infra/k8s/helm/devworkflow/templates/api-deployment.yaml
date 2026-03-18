@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "devworkflow.fullname" . }}-api-config
+  labels:
+    {{- include "devworkflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+data:
+  NODE_ENV: {{ .Values.config.api.nodeEnv | quote }}
+  PORT: {{ .Values.config.api.port | quote }}
+  OLLAMA_MODEL: {{ .Values.config.api.ollamaModel | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "devworkflow.fullname" . }}-api-secret
+  labels:
+    {{- include "devworkflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+type: Opaque
+stringData:
+  DATABASE_URL: {{ .Values.secrets.api.databaseUrl | quote }}
+  SESSION_SECRET: {{ .Values.secrets.api.sessionSecret | quote }}
+  ADMIN_EMAIL: {{ .Values.secrets.api.adminEmail | quote }}
+  ADMIN_PASSWORD: {{ .Values.secrets.api.adminPassword | quote }}
+  OLLAMA_BASE_URL: {{ .Values.secrets.api.ollamaBaseUrl | quote }}
+---
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "devworkflow.fullname" . }}-api-data
+  labels:
+    {{- include "devworkflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "devworkflow.fullname" . }}-api
+  labels:
+    {{- include "devworkflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.replicaCount.api }}
+  selector:
+    matchLabels:
+      {{- include "devworkflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "devworkflow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "devworkflow.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.api.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.api.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "devworkflow.fullname" . }}-api-config
+            - secretRef:
+                name: {{ include "devworkflow.fullname" . }}-api-secret
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "devworkflow.fullname" . }}-api-data
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "devworkflow.fullname" . }}-api
+  labels:
+    {{- include "devworkflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.service.api.type }}
+  ports:
+    - port: {{ .Values.service.api.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "devworkflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api

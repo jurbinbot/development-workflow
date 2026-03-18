@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=/data/devworkflow.db
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
+      - NODE_ENV=development
+    volumes:
+      - api-data:/app/data
+    depends_on:
+      - ollama
+    networks:
+      - devworkflow-network
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:3001
+    depends_on:
+      - api
+    networks:
+      - devworkflow-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - devworkflow-network
+
+volumes:
+  api-data:
+  ollama-data:
+
+networks:
+  devworkflow-network:
+    driver: bridge

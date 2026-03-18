@@ -2,6 +2,7 @@
 node_modules/
 .pnp
 .pnp.js
+bun.lockb
 
 # Build outputs
 dist/
@@ -9,10 +10,12 @@ build/
 .next/
 out/
 
-# Environment files
+# Environment files - NEVER COMMIT THESE
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
 
 # IDE
 .idea/
@@ -28,19 +31,30 @@ Thumbs.db
 logs/
 *.log
 npm-debug.log*
+bun-debug.log*
 
 # Testing
 coverage/
 .nyc_output/
 
-# Database
+# Database - local development only
 *.db
 *.sqlite
 *.sqlite3
+data/
 
 # Docker
 docker-compose.override.yml
 
-# Kubernetes secrets
+# Kubernetes secrets - NEVER COMMIT THESE
 *.secret.yaml
 secrets/
+*.sealed.yaml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Turbo
+.turbo/

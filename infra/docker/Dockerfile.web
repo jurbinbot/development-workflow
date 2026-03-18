@@ -1,0 +1,57 @@
+# Development Workflow Web
+FROM oven/bun:1.1-alpine AS base
+
+# Install dependencies stage
+FROM base AS deps
+WORKDIR /app
+
+# Copy package files
+COPY package.json bun.lockb* ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/web/package.json ./apps/web/
+
+# Install dependencies
+RUN bun install --frozen-lockfile
+
+# Build shared package
+FROM deps AS build-shared
+WORKDIR /app
+COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun run build
+
+# Build Web
+FROM build-shared AS build
+WORKDIR /app
+COPY apps/web ./apps/web
+COPY --from=build-shared /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build-shared /app/packages/shared/package.json ./packages/shared/
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+RUN cd apps/web && bun run build
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy built files
+COPY --from=build /app/apps/web/public ./public
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["bun", "run", "server.js"]

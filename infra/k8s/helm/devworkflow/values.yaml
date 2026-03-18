@@ -1,0 +1,114 @@
+# Default values for devworkflow.
+# Declare variables to be passed into your templates.
+
+replicaCount:
+  api: 2
+  web: 2
+
+image:
+  api:
+    repository: ghcr.io/jurbinbot/devworkflow-api
+    pullPolicy: Always
+    tag: "latest"
+  web:
+    repository: ghcr.io/jurbinbot/devworkflow-web
+    pullPolicy: Always
+    tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+
+service:
+  api:
+    type: ClusterIP
+    port: 3001
+  web:
+    type: ClusterIP
+    port: 3000
+
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations: {}
+  hosts:
+    - host: devworkflow.local
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: api
+        - path: /
+          pathType: Prefix
+          service: web
+  tls: []
+
+resources:
+  api:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  web:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Application configuration
+config:
+  api:
+    nodeEnv: production
+    port: 3001
+    ollamaModel: llama3.1:8b
+
+# Secrets (to be set via --set or external secret management)
+secrets:
+  api:
+    databaseUrl: ""
+    sessionSecret: ""
+    adminEmail: ""
+    adminPassword: ""
+    ollamaBaseUrl: ""
+
+# Persistence for SQLite database (if using SQLite)
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  storageClass: ""
+
+# Skupper configuration for multi-cluster
+skupper:
+  enabled: true
+  siteName: devworkflow
+  links: []

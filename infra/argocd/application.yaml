@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devworkflow
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jurbinbot/development-workflow.git
+    targetRevision: HEAD
+    path: infra/k8s/helm/devworkflow
+    helm:
+      values: |
+        # Override values here
+        # Secrets should be managed externally
+        secrets:
+          api:
+            # Reference external secrets or use sealed secrets
+            databaseUrl: ""
+            sessionSecret: ""
+            adminEmail: ""
+            adminPassword: ""
+            ollamaBaseUrl: ""
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devworkflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

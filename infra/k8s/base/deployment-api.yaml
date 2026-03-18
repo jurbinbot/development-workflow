@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devworkflow
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devworkflow-api-config
+  namespace: devworkflow
+data:
+  NODE_ENV: "production"
+  PORT: "3001"
+  OLLAMA_MODEL: "llama3.1:8b"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: devworkflow-api-secret
+  namespace: devworkflow
+type: Opaque
+stringData:
+  DATABASE_URL: ""
+  SESSION_SECRET: ""
+  ADMIN_EMAIL: ""
+  ADMIN_PASSWORD: ""
+  OLLAMA_BASE_URL: ""
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: devworkflow-api-data
+  namespace: devworkflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devworkflow-api
+  namespace: devworkflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: devworkflow-api
+  template:
+    metadata:
+      labels:
+        app: devworkflow-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/jurbinbot/devworkflow-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: devworkflow-api-config
+            - secretRef:
+                name: devworkflow-api-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: devworkflow-api-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devworkflow-api
+  namespace: devworkflow
+spec:
+  selector:
+    app: devworkflow-api
+  ports:
+    - port: 3001
+      targetPort: 3001
+  type: ClusterIP
