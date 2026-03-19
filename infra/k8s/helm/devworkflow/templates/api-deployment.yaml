@@ -19,13 +19,19 @@ metadata:
     app.kubernetes.io/component: api
 type: Opaque
 stringData:
-  DATABASE_URL: {{ .Values.secrets.api.databaseUrl | quote }}
+  {{- if not .Values.database.external.enabled }}
+  DATABASE_URL: {{ .Values.database.sqlite.path | quote }}
+  {{- else if .Values.database.external.existingSecret }}
+  # DATABASE_URL is from external secret: {{ .Values.database.external.existingSecret }}
+  {{- else }}
+  DATABASE_URL: {{ printf "postgresql://%s:%s@%s:%d/%s" .Values.database.external.username .Values.database.external.password .Values.database.external.host .Values.database.external.port .Values.database.external.database | quote }}
+  {{- end }}
   SESSION_SECRET: {{ .Values.secrets.api.sessionSecret | quote }}
   ADMIN_EMAIL: {{ .Values.secrets.api.adminEmail | quote }}
   ADMIN_PASSWORD: {{ .Values.secrets.api.adminPassword | quote }}
   OLLAMA_BASE_URL: {{ .Values.secrets.api.ollamaBaseUrl | quote }}
 ---
-{{- if .Values.persistence.enabled }}
+{{- if and .Values.persistence.enabled .Values.database.sqlite.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -89,7 +95,11 @@ spec:
                 name: {{ include "devworkflow.fullname" . }}-api-config
             - secretRef:
                 name: {{ include "devworkflow.fullname" . }}-api-secret
-          {{- if .Values.persistence.enabled }}
+            {{- if and .Values.database.external.enabled .Values.database.external.existingSecret }}
+            - secretRef:
+                name: {{ .Values.database.external.existingSecret }}
+            {{- end }}
+          {{- if and .Values.persistence.enabled .Values.database.sqlite.enabled }}
           volumeMounts:
             - name: data
               mountPath: /app/data

@@ -1,0 +1,30 @@
+# PostgreSQL connection configuration for devworkflow Helm chart
+# Update values.yaml to use PostgreSQL instead of SQLite
+
+# In values.yaml, set:
+config:
+  api:
+    nodeEnv: production
+    port: 3001
+    ollamaModel: llama3.1:8b
+
+# Reference the PostgreSQL secrets created by the postgres setup
+secrets:
+  api:
+    # Use the postgres-app-credentials secret
+    # The secret contains DATABASE_URL and DATABASE_URL_RO
+    databaseUrl: ""  # Will be injected from postgres-app-credentials
+    sessionSecret: ""  # Generate: openssl rand -base64 32
+    adminEmail: ""
+    adminPassword: ""
+    ollamaBaseUrl: ""
+
+# Disable SQLite persistence since we're using PostgreSQL
+persistence:
+  enabled: false
+
+# Update deployment to use the postgres secret
+# Add this to your deployment or use --set during helm install:
+# --set extraEnv[0].name=DATABASE_URL
+# --set extraEnv[0].valueFrom.secretKeyRef.name=postgres-app-credentials
+# --set extraEnv[0].valueFrom.secretKeyRef.key=DATABASE_URL

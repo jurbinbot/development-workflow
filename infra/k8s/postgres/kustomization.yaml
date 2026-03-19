@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Apply 00-cnpg-operator.yaml separately first (cluster-wide)
+  # - 00-cnpg-operator.yaml
+
+# Apply these after operator is installed
+# - 01-postgres-primary.yaml  # On Cluster 1 (Primary)
+# - 02-postgres-replica.yaml  # On Cluster 2 (Replica)
+# - 03-skupper-expose.yaml    # On Cluster 1 (Primary)
+# - 04-skupper-listener.yaml  # On Cluster 2 (Replica)
+
+# Use deploy.sh for interactive setup

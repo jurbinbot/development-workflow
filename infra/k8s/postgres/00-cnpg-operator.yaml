@@ -1,0 +1,18 @@
+# CloudNativePG Operator Installation
+# Apply this on BOTH clusters
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Note: Install the operator directly from CloudNativePG:
+# kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.22/releases/cnpg-1.22.0.yaml
+
+# Or use Helm:
+# helm repo add cnpg https://cloudnative-pg.github.io/charts
+# helm install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace

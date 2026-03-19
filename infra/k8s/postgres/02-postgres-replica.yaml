@@ -1,0 +1,122 @@
+# PostgreSQL Replica Cluster Configuration
+# Deploy on CLUSTER 2 (Secondary Site)
+# This connects to the primary via Skupper
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: devworkflow
+spec:
+  # Instance configuration
+  instances: 3
+  primaryUpdateMethod: switchover
+  primaryUpdateStrategy: unsupervised
+
+  # PostgreSQL version (must match primary)
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.2
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+  # Storage configuration
+  storage:
+    size: 10Gi
+    storageClass: ""
+    resizeMode: pvc
+
+  # WAL storage
+  walStorage:
+    size: 5Gi
+    storageClass: ""
+
+  # Bootstrap from the primary cluster via pg_basebackup through Skupper
+  bootstrap:
+    pg_basebackup:
+      source: primary-cluster
+      database: devworkflow
+      owner: devworkflow
+
+  # External cluster reference (the primary via Skupper)
+  externalClusters:
+    - name: primary-cluster
+      connectionParameters:
+        # Use Skupper service name to connect to primary
+        host: postgres-rw.skupper
+        port: "5432"
+        user: postgres
+        dbname: devworkflow
+      password:
+        name: postgres-superuser
+        key: password
+
+  # PostgreSQL configuration
+  postgresql:
+    parameters:
+      max_connections: "300"
+      shared_buffers: "512MB"
+      effective_cache_size: "1GB"
+      maintenance_work_mem: "128MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      default_statistics_target: "100"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      work_mem: "2621kB"
+      min_wal_size: "1GB"
+      max_wal_size: "4GB"
+      hot_standby: "on"
+      hot_standby_feedback: "on"
+
+  # Replication slots
+  replicationSlots:
+    highAvailability:
+      enabled: true
+
+  # Service configuration
+  serviceUpdateStrategy:
+    type: RollingUpdate
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: devworkflow
+type: kubernetes.io/basic-auth
+stringData:
+  username: devworkflow
+  password: ""  # Must match primary cluster password
+  host: postgres-rw.devworkflow.svc
+  port: "5432"
+  database: devworkflow
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-superuser
+  namespace: devworkflow
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: ""  # Must match primary cluster password
+---
+# Application credentials for replica cluster
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-app-credentials
+  namespace: devworkflow
+type: Opaque
+stringData:
+  # Read/Write through Skupper to primary
+  DATABASE_URL: "postgresql://devworkflow:@postgres-rw.skupper:5432/devworkflow"
+  # Read-only from local replica (fastest for reads)
+  DATABASE_URL_RO: "postgresql://devworkflow:@postgres-ro.devworkflow:5432/devworkflow"

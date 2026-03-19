@@ -83,16 +83,26 @@ development-workflow/
 │   │   ├── overlays/            # Environment-specific
 │   │   │   ├── staging/
 │   │   │   └── production/
-│   │   └── helm/                # Helm chart
-│   │       └── devworkflow/
-│   │           ├── Chart.yaml
-│   │           ├── values.yaml  # Config values (secrets from env)
-│   │           └── templates/
-│   │               ├── _helpers.tpl
-│   │               ├── namespace.yaml
-│   │               ├── api-deployment.yaml
-│   │               ├── web-deployment.yaml
-│   │               └── ingress.yaml
+│   │   ├── helm/                # Helm chart
+│   │   │   └── devworkflow/
+│   │   │       ├── Chart.yaml
+│   │   │       ├── values.yaml  # Config values (secrets from env)
+│   │   │       └── templates/
+│   │   │           ├── _helpers.tpl
+│   │   │           ├── namespace.yaml
+│   │   │           ├── api-deployment.yaml
+│   │   │           ├── web-deployment.yaml
+│   │   │           └── ingress.yaml
+│   │   └── postgres/            # PostgreSQL multi-cluster setup
+│   │       ├── README.md       # Setup documentation
+│   │       ├── 00-cnpg-operator.yaml      # CloudNativePG operator
+│   │       ├── 01-postgres-primary.yaml   # Primary cluster config
+│   │       ├── 02-postgres-replica.yaml   # Replica cluster config
+│   │       ├── 03-skupper-expose.yaml     # Skupper exposure (primary)
+│   │       ├── 04-skupper-listener.yaml  # Skupper listener (replica)
+│   │       ├── 05-devworkflow-values.yaml # App values for Postgres
+│   │       ├── deploy.sh        # Interactive setup script
+│   │       └── kustomization.yaml
 │   │
 │   └── argocd/                  # ArgoCD Application
 │       └── application.yaml     # GitOps deployment config

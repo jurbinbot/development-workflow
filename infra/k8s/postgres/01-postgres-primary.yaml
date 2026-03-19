@@ -1,0 +1,128 @@
+# PostgreSQL Primary Cluster Configuration
+# Deploy on CLUSTER 1 (Primary Site)
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: devworkflow
+spec:
+  # Instance configuration
+  instances: 3
+  primaryUpdateMethod: switchover
+  primaryUpdateStrategy: unsupervised
+
+  # PostgreSQL version
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.2
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+  # Storage configuration
+  storage:
+    size: 10Gi
+    storageClass: ""  # Uses default storage class
+    resizeMode: pvc
+
+  # WAL storage (for replication)
+  walStorage:
+    size: 5Gi
+    storageClass: ""
+
+  # Bootstrap configuration
+  bootstrap:
+    initdb:
+      database: devworkflow
+      owner: devworkflow
+      secret:
+        name: postgres-credentials
+
+  # PostgreSQL configuration
+  postgresql:
+    parameters:
+      max_connections: "300"
+      shared_buffers: "512MB"
+      effective_cache_size: "1GB"
+      maintenance_work_mem: "128MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      default_statistics_target: "100"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      work_mem: "2621kB"
+      min_wal_size: "1GB"
+      max_wal_size: "4GB"
+      # Replication settings
+      wal_level: replica
+      max_wal_senders: "10"
+      max_replication_slots: "10"
+      hot_standby: "on"
+      hot_standby_feedback: "on"
+      wal_keep_size: "1GB"
+
+  # Replication configuration for cross-cluster
+  replicationSlots:
+    highAvailability:
+      enabled: true
+    synchronizeReplicas:
+      enabled: true
+
+  # Backup configuration (optional - configure S3 backup)
+  # backup:
+  #   barmanObjectStore:
+  #     destinationPath: s3://your-bucket/postgres-backups/
+  #     ...
+
+  # Service configuration
+  serviceUpdateStrategy:
+    type: RollingUpdate
+
+  # Enable PgBouncer for connection pooling
+  # Uncomment to enable:
+  # managedServices:
+  #   disabledDefaultServices: [ "ro" ]
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: devworkflow
+type: kubernetes.io/basic-auth
+stringData:
+  username: devworkflow
+  password: ""  # Set via environment or external secret management
+  host: postgres-rw.devworkflow.svc
+  port: "5432"
+  database: devworkflow
+---
+# Superuser credentials (for admin tasks)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-superuser
+  namespace: devworkflow
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: ""  # Set via environment or external secret management
+---
+# Application connection string secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-app-credentials
+  namespace: devworkflow
+type: Opaque
+stringData:
+  # Read/Write connection to primary
+  DATABASE_URL: "postgresql://devworkflow:@postgres-rw.devworkflow:5432/devworkflow"
+  # Read-only connection to replicas (within cluster)
+  DATABASE_URL_RO: "postgresql://devworkflow:@postgres-ro.devworkflow:5432/devworkflow"

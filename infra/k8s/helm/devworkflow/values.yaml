@@ -100,7 +100,34 @@ secrets:
     adminPassword: ""
     ollamaBaseUrl: ""
 
-# Persistence for SQLite database (if using SQLite)
+# Database configuration
+database:
+  # Use SQLite (persistence.enabled=true) or PostgreSQL (external.enabled=true)
+  # For multi-cluster with replication, use PostgreSQL
+
+  # SQLite configuration (default)
+  sqlite:
+    enabled: true
+    path: /app/data/devworkflow.db
+
+  # External PostgreSQL configuration
+  external:
+    enabled: false
+    # Use existing secret (recommended for production)
+    existingSecret: ""  # e.g., postgres-app-credentials
+    existingSecretKey: DATABASE_URL
+
+    # Or specify connection directly (not recommended for secrets)
+    host: ""  # e.g., postgres-rw.devworkflow.svc.cluster.local
+    port: 5432
+    database: devworkflow
+    username: devworkflow
+    password: ""  # Use existingSecret instead
+
+    # Read replica connection (optional)
+    readOnlyHost: ""  # e.g., postgres-ro.devworkflow.svc.cluster.local
+
+# Persistence for SQLite database (only used when database.sqlite.enabled=true)
 persistence:
   enabled: true
   accessMode: ReadWriteOnce
