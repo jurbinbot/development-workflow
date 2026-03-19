@@ -1,0 +1,33 @@
+# PostgreSQL Replica Cluster
+# Deploy on Cluster 2 only
+# Requires Skupper connection to primary
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-replica
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jurbinbot/development-workflow.git
+    targetRevision: HEAD
+    path: infra/k8s/postgres/replica
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devworkflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    # CloudNativePG manages these fields
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      jsonPointers:
+        - /spec/bootstrap/pg_basebackup
+        - /status

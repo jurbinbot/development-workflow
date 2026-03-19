@@ -104,8 +104,14 @@ development-workflow/
 │   │       ├── deploy.sh        # Interactive setup script
 │   │       └── kustomization.yaml
 │   │
-│   └── argocd/                  # ArgoCD Application
-│       └── application.yaml     # GitOps deployment config
+│   └── argocd/                  # ArgoCD Applications
+│       ├── application.yaml     # Main application
+│       ├── app-of-apps.yaml     # App of Apps pattern
+│       └── apps/                # Individual Applications
+│           ├── cnpg-operator.yaml
+│           ├── postgres-primary.yaml
+│           ├── postgres-replica.yaml
+│           └── devworkflow.yaml
 │
 ├── .github/                      # GitHub workflows
 │   └── workflows/

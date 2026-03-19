@@ -1,0 +1,9 @@
+# PostgreSQL Replica Cluster Configuration
+# Deploy on CLUSTER 2 only
+# Requires Skupper link to primary cluster
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devworkflow

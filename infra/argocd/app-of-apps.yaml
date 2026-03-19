@@ -1,0 +1,22 @@
+# App of Apps pattern for ArgoCD
+# This deploys all components in the correct order
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devworkflow-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jurbinbot/development-workflow.git
+    targetRevision: HEAD
+    path: infra/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

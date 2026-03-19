@@ -1,5 +1,5 @@
-# PostgreSQL Primary Cluster Configuration
-# Deploy on CLUSTER 1 (Primary Site)
+# PostgreSQL Primary Cluster
+# CloudNativePG manages the primary with replicas for HA
 
 ---
 apiVersion: postgresql.cnpg.io/v1
@@ -28,7 +28,7 @@ spec:
   # Storage configuration
   storage:
     size: 10Gi
-    storageClass: ""  # Uses default storage class
+    storageClass: ""
     resizeMode: pvc
 
   # WAL storage (for replication)
@@ -36,7 +36,7 @@ spec:
     size: 5Gi
     storageClass: ""
 
-  # Bootstrap configuration
+  # Bootstrap configuration - create database on first run
   bootstrap:
     initdb:
       database: devworkflow
@@ -59,7 +59,7 @@ spec:
       work_mem: "2621kB"
       min_wal_size: "1GB"
       max_wal_size: "4GB"
-      # Replication settings
+      # Replication settings for cross-cluster
       wal_level: replica
       max_wal_senders: "10"
       max_replication_slots: "10"
@@ -67,62 +67,17 @@ spec:
       hot_standby_feedback: "on"
       wal_keep_size: "1GB"
 
-  # Replication configuration for cross-cluster
+  # Replication slots for HA
   replicationSlots:
     highAvailability:
       enabled: true
     synchronizeReplicas:
       enabled: true
 
-  # Backup configuration (optional - configure S3 backup)
-  # backup:
-  #   barmanObjectStore:
-  #     destinationPath: s3://your-bucket/postgres-backups/
-  #     ...
-
   # Service configuration
   serviceUpdateStrategy:
     type: RollingUpdate
 
-  # Enable PgBouncer for connection pooling
-  # Uncomment to enable:
+  # Enable connection pooling (optional)
   # managedServices:
   #   disabledDefaultServices: [ "ro" ]
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-credentials
-  namespace: devworkflow
-type: kubernetes.io/basic-auth
-stringData:
-  username: devworkflow
-  password: ""  # Set via environment or external secret management
-  host: postgres-rw.devworkflow.svc
-  port: "5432"
-  database: devworkflow
----
-# Superuser credentials (for admin tasks)
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-superuser
-  namespace: devworkflow
-type: kubernetes.io/basic-auth
-stringData:
-  username: postgres
-  password: ""  # Set via environment or external secret management
----
-# Application connection string secret
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-app-credentials
-  namespace: devworkflow
-type: Opaque
-stringData:
-  # Read/Write connection to primary
-  DATABASE_URL: "postgresql://devworkflow:@postgres-rw.devworkflow:5432/devworkflow"
-  # Read-only connection to replicas (within cluster)
-  DATABASE_URL_RO: "postgresql://devworkflow:@postgres-ro.devworkflow:5432/devworkflow"

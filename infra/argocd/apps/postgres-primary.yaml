@@ -1,0 +1,32 @@
+# PostgreSQL Primary Cluster
+# Deploy on Cluster 1 only
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-primary
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jurbinbot/development-workflow.git
+    targetRevision: HEAD
+    path: infra/k8s/postgres/primary
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devworkflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    # CloudNativePG manages these fields
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      jsonPointers:
+        - /spec/bootstrap/initdb
+        - /status

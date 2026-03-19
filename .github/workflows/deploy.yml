@@ -1,10 +1,11 @@
 name: Deploy
 
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types:
-      - completed
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -15,16 +16,31 @@ on:
           - staging
           - production
         default: 'staging'
-      version:
-        description: 'Version to deploy (leave empty for latest)'
+      deploy-postgres:
+        description: 'Deploy PostgreSQL (first time only)'
         required: false
-        type: string
+        type: boolean
+        default: false
+      cluster:
+        description: 'Target cluster'
+        required: true
+        type: choice
+        options:
+          - cluster1-primary
+          - cluster2-replica
+        default: 'cluster1-primary'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}
 
 jobs:
-  deploy:
+  # Deploy PostgreSQL infrastructure
+  deploy-postgres:
+    if: ${{ github.event.inputs.deploy-postgres == 'true' }}
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,33 +51,186 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
 
-      - name: Configure kubeconfig
+      - name: Configure kubeconfig for ${{ github.event.inputs.cluster }}
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_BASE64 }}" | base64 -d > ~/.kube/config
+          if [ "${{ github.event.inputs.cluster }}" = "cluster1-primary" ]; then
+            echo "${{ secrets.KUBECONFIG_CLUSTER1_BASE64 }}" | base64 -d > ~/.kube/config
+          else
+            echo "${{ secrets.KUBECONFIG_CLUSTER2_BASE64 }}" | base64 -d > ~/.kube/config
+          fi
           chmod 600 ~/.kube/config
 
-      - name: Deploy with Helm
+      - name: Install CloudNativePG Operator
         run: |
-          VERSION="${{ github.event.inputs.version || 'latest' }}"
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
-          
-          helm upgrade --install devworkflow ./infra/k8s/helm/devworkflow \
-            --namespace devworkflow-$ENV \
-            --create-namespace \
-            --set image.api.tag=$VERSION \
-            --set image.web.tag=$VERSION \
-            --set secrets.api.databaseUrl="${{ secrets.DATABASE_URL }}" \
-            --set secrets.api.sessionSecret="${{ secrets.SESSION_SECRET }}" \
-            --set secrets.api.adminEmail="${{ secrets.ADMIN_EMAIL }}" \
-            --set secrets.api.adminPassword="${{ secrets.ADMIN_PASSWORD }}" \
-            --set secrets.api.ollamaBaseUrl="${{ secrets.OLLAMA_BASE_URL }}"
+          kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.22/releases/cnpg-1.22.0.yaml
+          kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system --timeout=120s
 
-      - name: Verify deployment
+      - name: Deploy PostgreSQL (Primary Cluster)
+        if: ${{ github.event.inputs.cluster == 'cluster1-primary' }}
         run: |
-          kubectl rollout status deployment/devworkflow-api -n devworkflow-${{ github.event.inputs.environment || 'staging' }} --timeout=300s
-          kubectl rollout status deployment/devworkflow-web -n devworkflow-${{ github.event.inputs.environment || 'staging' }} --timeout=300s
+          # Create namespace
+          kubectl create namespace devworkflow --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Health check
+          # Create secrets from GitHub secrets
+          kubectl create secret generic postgres-credentials \
+            --namespace=devworkflow \
+            --from-literal=username=devworkflow \
+            --from-literal=password="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=host=postgres-rw.devworkflow.svc \
+            --from-literal=port=5432 \
+            --from-literal=database=devworkflow \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic postgres-superuser \
+            --namespace=devworkflow \
+            --from-literal=username=postgres \
+            --from-literal=password="${{ secrets.POSTGRES_SUPERUSER_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create app connection secret
+          kubectl create secret generic postgres-app-credentials \
+            --namespace=devworkflow \
+            --from-literal=DATABASE_URL="postgresql://devworkflow:${{ secrets.POSTGRES_PASSWORD }}@postgres-rw.devworkflow:5432/devworkflow" \
+            --from-literal=DATABASE_URL_RO="postgresql://devworkflow:${{ secrets.POSTGRES_PASSWORD }}@postgres-ro.devworkflow:5432/devworkflow" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Deploy PostgreSQL cluster
+          kubectl apply -k infra/k8s/postgres/primary
+
+          # Wait for cluster to be ready
+          kubectl wait cluster/postgres -n devworkflow --for=condition=Ready --timeout=600s
+
+      - name: Deploy PostgreSQL (Replica Cluster)
+        if: ${{ github.event.inputs.cluster == 'cluster2-replica' }}
         run: |
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=devworkflow -n devworkflow-${{ github.event.inputs.environment || 'staging' }} --timeout=120s
+          # Create namespace
+          kubectl create namespace devworkflow --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create secrets (must match primary cluster)
+          kubectl create secret generic postgres-credentials \
+            --namespace=devworkflow \
+            --from-literal=username=devworkflow \
+            --from-literal=password="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=host=postgres-rw.devworkflow.svc \
+            --from-literal=port=5432 \
+            --from-literal=database=devworkflow \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic postgres-superuser \
+            --namespace=devworkflow \
+            --from-literal=username=postgres \
+            --from-literal=password="${{ secrets.POSTGRES_SUPERUSER_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create app connection secret (write via Skupper, read local)
+          kubectl create secret generic postgres-app-credentials \
+            --namespace=devworkflow \
+            --from-literal=DATABASE_URL="postgresql://devworkflow:${{ secrets.POSTGRES_PASSWORD }}@postgres-primary.devworkflow:5432/devworkflow" \
+            --from-literal=DATABASE_URL_RO="postgresql://devworkflow:${{ secrets.POSTGRES_PASSWORD }}@postgres-ro.devworkflow:5432/devworkflow" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Deploy Skupper listener and PostgreSQL cluster
+          kubectl apply -k infra/k8s/postgres/replica
+
+          # Wait for cluster to be ready
+          kubectl wait cluster/postgres -n devworkflow --for=condition=Ready --timeout=600s
+
+  # Deploy application via ArgoCD
+  deploy-app:
+    runs-on: ubuntu-latest
+    needs: [deploy-postgres]
+    if: always() && (needs.deploy-postgres.result == 'success' || needs.deploy-postgres.result == 'skipped')
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Configure kubeconfig for cluster1
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_CLUSTER1_BASE64 }}" | base64 -d > ~/.kube/config-cluster1
+          chmod 600 ~/.kube/config-cluster1
+
+      - name: Configure kubeconfig for cluster2
+        run: |
+          echo "${{ secrets.KUBECONFIG_CLUSTER2_BASE64 }}" | base64 -d > ~/.kube/config-cluster2
+          chmod 600 ~/.kube/config-cluster2
+
+      - name: Deploy ArgoCD Applications (Cluster 1 - Primary)
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER_CLUSTER1 }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN_CLUSTER1 }}
+        run: |
+          export KUBECONFIG=~/.kube/config-cluster1
+
+          # Log in to ArgoCD
+          argocd login $ARGOCD_SERVER --auth-token $ARGOCD_TOKEN --grpc-web
+
+          # Sync the application
+          argocd app sync devworkflow --grpc-web || \
+            argocd app create devworkflow \
+              --repo https://github.com/${{ github.repository }}.git \
+              --path infra/k8s/helm/devworkflow \
+              --dest-server https://kubernetes.default.svc \
+              --dest-namespace devworkflow \
+              --helm-set image.api.tag=${{ github.sha }} \
+              --helm-set image.web.tag=${{ github.sha }} \
+              --helm-set database.external.enabled=true \
+              --helm-set database.external.existingSecret=postgres-app-credentials \
+              --helm-set secrets.api.sessionSecret="${{ secrets.SESSION_SECRET }}" \
+              --helm-set secrets.api.adminEmail="${{ secrets.ADMIN_EMAIL }}" \
+              --helm-set secrets.api.adminPassword="${{ secrets.ADMIN_PASSWORD }}" \
+              --helm-set secrets.api.ollamaBaseUrl="${{ secrets.OLLAMA_BASE_URL }}" \
+              --sync-policy automated \
+              --auto-prune \
+              --self-heal
+
+      - name: Deploy ArgoCD Applications (Cluster 2 - Replica)
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER_CLUSTER2 }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN_CLUSTER2 }}
+        run: |
+          export KUBECONFIG=~/.kube/config-cluster2
+
+          # Log in to ArgoCD
+          argocd login $ARGOCD_SERVER --auth-token $ARGOCD_TOKEN --grpc-web
+
+          # Sync the application
+          argocd app sync devworkflow --grpc-web || \
+            argocd app create devworkflow \
+              --repo https://github.com/${{ github.repository }}.git \
+              --path infra/k8s/helm/devworkflow \
+              --dest-server https://kubernetes.default.svc \
+              --dest-namespace devworkflow \
+              --helm-set image.api.tag=${{ github.sha }} \
+              --helm-set image.web.tag=${{ github.sha }} \
+              --helm-set database.external.enabled=true \
+              --helm-set database.external.existingSecret=postgres-app-credentials \
+              --helm-set secrets.api.sessionSecret="${{ secrets.SESSION_SECRET }}" \
+              --helm-set secrets.api.adminEmail="${{ secrets.ADMIN_EMAIL }}" \
+              --helm-set secrets.api.adminPassword="${{ secrets.ADMIN_PASSWORD }}" \
+              --helm-set secrets.api.ollamaBaseUrl="${{ secrets.OLLAMA_BASE_URL }}" \
+              --sync-policy automated \
+              --auto-prune \
+              --self-heal
+
+      - name: Verify deployment (Cluster 1)
+        run: |
+          export KUBECONFIG=~/.kube/config-cluster1
+          kubectl rollout status deployment/devworkflow-api -n devworkflow --timeout=300s
+          kubectl rollout status deployment/devworkflow-web -n devworkflow --timeout=300s
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=devworkflow-api -n devworkflow --timeout=120s
+
+      - name: Verify deployment (Cluster 2)
+        run: |
+          export KUBECONFIG=~/.kube/config-cluster2
+          kubectl rollout status deployment/devworkflow-api -n devworkflow --timeout=300s
+          kubectl rollout status deployment/devworkflow-web -n devworkflow --timeout=300s
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=devworkflow-api -n devworkflow --timeout=120s

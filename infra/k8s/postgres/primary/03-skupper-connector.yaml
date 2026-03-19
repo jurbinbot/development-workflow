@@ -1,0 +1,37 @@
+# Skupper Connector - Expose PostgreSQL to remote clusters
+# This allows the replica cluster to connect via Skupper
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-rw-exposed
+  namespace: devworkflow
+  labels:
+    app: postgres
+    cluster.postgresql.cnpg.io/cluster: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app: postgres
+    cluster.postgresql.cnpg.io/cluster: postgres
+    role: primary
+---
+apiVersion: skupper.io/v2alpha1
+kind: Connector
+metadata:
+  name: postgres-primary
+  namespace: devworkflow
+spec:
+  routingKey: postgres-rw
+  port: 5432
+  selector: postgres-rw-exposed
+  host: postgres-rw-exposed
+---
+# Alternative: Use Skupper CLI to expose the service
+# skupper expose service postgres-rw --port 5432 -n devworkflow

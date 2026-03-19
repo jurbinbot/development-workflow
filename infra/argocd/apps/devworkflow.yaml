@@ -1,0 +1,52 @@
+# DevWorkflow Application
+# Depends on PostgreSQL being ready
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devworkflow
+  namespace: argocd
+  annotations:
+    # Wait for PostgreSQL to be ready
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jurbinbot/development-workflow.git
+    targetRevision: HEAD
+    path: infra/k8s/helm/devworkflow
+    helm:
+      valueFiles:
+        - values.yaml
+        - overlays/production/values.yaml
+      values: |
+        # Secrets from External Secrets Operator or Sealed Secrets
+        secrets:
+          api:
+            databaseUrl: ""
+            sessionSecret: ""
+            adminEmail: ""
+            adminPassword: ""
+            ollamaBaseUrl: ""
+
+        # Use external PostgreSQL
+        database:
+          sqlite:
+            enabled: false
+          external:
+            enabled: true
+            existingSecret: postgres-app-credentials
+
+        persistence:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devworkflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,31 @@
+# Skupper Listener - Connect to primary cluster's PostgreSQL
+# This creates a local service that forwards to the primary via Skupper
+
+---
+apiVersion: skupper.io/v2alpha1
+kind: Listener
+metadata:
+  name: postgres-primary
+  namespace: devworkflow
+spec:
+  routingKey: postgres-rw
+  port: 5432
+  host: postgres-primary-skupper
+  type: service
+---
+# Create a service that points to the Skupper listener
+# This will be used for pg_basebackup during initial bootstrap
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  namespace: devworkflow
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    skupper.io/service: postgres-primary-skupper

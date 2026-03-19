@@ -1,6 +1,5 @@
-# PostgreSQL Replica Cluster Configuration
-# Deploy on CLUSTER 2 (Secondary Site)
-# This connects to the primary via Skupper
+# PostgreSQL Replica Cluster
+# Bootstraps from primary cluster via pg_basebackup through Skupper
 
 ---
 apiVersion: postgresql.cnpg.io/v1
@@ -37,7 +36,7 @@ spec:
     size: 5Gi
     storageClass: ""
 
-  # Bootstrap from the primary cluster via pg_basebackup through Skupper
+  # Bootstrap from primary cluster via Skupper
   bootstrap:
     pg_basebackup:
       source: primary-cluster
@@ -48,8 +47,8 @@ spec:
   externalClusters:
     - name: primary-cluster
       connectionParameters:
-        # Use Skupper service name to connect to primary
-        host: postgres-rw.skupper
+        # Connect to Skupper listener
+        host: postgres-primary.devworkflow.svc
         port: "5432"
         user: postgres
         dbname: devworkflow
@@ -83,40 +82,3 @@ spec:
   # Service configuration
   serviceUpdateStrategy:
     type: RollingUpdate
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-credentials
-  namespace: devworkflow
-type: kubernetes.io/basic-auth
-stringData:
-  username: devworkflow
-  password: ""  # Must match primary cluster password
-  host: postgres-rw.devworkflow.svc
-  port: "5432"
-  database: devworkflow
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-superuser
-  namespace: devworkflow
-type: kubernetes.io/basic-auth
-stringData:
-  username: postgres
-  password: ""  # Must match primary cluster password
----
-# Application credentials for replica cluster
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-app-credentials
-  namespace: devworkflow
-type: Opaque
-stringData:
-  # Read/Write through Skupper to primary
-  DATABASE_URL: "postgresql://devworkflow:@postgres-rw.skupper:5432/devworkflow"
-  # Read-only from local replica (fastest for reads)
-  DATABASE_URL_RO: "postgresql://devworkflow:@postgres-ro.devworkflow:5432/devworkflow"

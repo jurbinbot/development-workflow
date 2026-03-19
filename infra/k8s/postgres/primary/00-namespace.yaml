@@ -1,0 +1,8 @@
+# PostgreSQL Primary Cluster Configuration
+# Deploy on CLUSTER 1 only
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devworkflow

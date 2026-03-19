@@ -33,9 +33,46 @@ This directory contains PostgreSQL configurations for cross-cluster replication 
 1. Skupper installed on both clusters and linked
 2. CloudNativePG operator installed on both clusters
 
-## Deployment Steps
+## Deployment Options
 
-### Step 1: Install CloudNativePG Operator (Both Clusters)
+### Option 1: ArgoCD GitOps (Recommended)
+
+This project uses ArgoCD for GitOps deployment. The CI/CD workflow handles:
+
+1. **Automatic deployment on push to main** - Triggers ArgoCD sync
+2. **Manual PostgreSQL deployment** - One-time setup per cluster
+3. **Multi-cluster deployment** - Deploys to both clusters via ArgoCD
+
+**Initial Setup:**
+
+1. Install CloudNativePG operator on both clusters (one-time):
+```bash
+kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.22/releases/cnpg-1.22.0.yaml
+```
+
+2. Create ArgoCD secrets in GitHub Actions:
+   - `KUBECONFIG_CLUSTER1_BASE64` - Base64-encoded kubeconfig for primary
+   - `KUBECONFIG_CLUSTER2_BASE64` - Base64-encoded kubeconfig for replica
+   - `ARGOCD_SERVER_CLUSTER1` - ArgoCD server URL
+   - `ARGOCD_TOKEN_CLUSTER1` - ArgoCD API token
+   - `ARGOCD_SERVER_CLUSTER2` - ArgoCD server URL
+   - `ARGOCD_TOKEN_CLUSTER2` - ArgoCD API token
+   - `POSTGRES_PASSWORD` - Application database password
+   - `POSTGRES_SUPERUSER_PASSWORD` - PostgreSQL superuser password
+
+3. Deploy PostgreSQL (manual trigger):
+   - Go to Actions → Deploy → Run workflow
+   - Select `deploy-postgres: true`
+   - Select `cluster: cluster1-primary` (first)
+   - Run, then repeat with `cluster: cluster2-replica`
+
+**Automatic Deployments:**
+- Push to `main` triggers ArgoCD sync on both clusters
+- Application uses PostgreSQL connection from secrets
+
+### Option 2: Manual Deployment
+
+#### Step 1: Install CloudNativePG Operator (Both Clusters)
 
 ```bash
 # Install CloudNativePG operator
@@ -45,53 +82,60 @@ kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg
 kubectl get pods -n cnpg-system
 ```
 
-### Step 2: Create Namespace (Both Clusters)
+#### Step 2: Deploy Primary PostgreSQL (Cluster 1)
 
 ```bash
+# Create secrets first
 kubectl create namespace devworkflow
+kubectl create secret generic postgres-credentials \
+  --namespace=devworkflow \
+  --from-literal=username=devworkflow \
+  --from-literal=password=your-secure-password \
+  --from-literal=host=postgres-rw.devworkflow.svc \
+  --from-literal=port=5432 \
+  --from-literal=database=devworkflow
+
+kubectl create secret generic postgres-superuser \
+  --namespace=devworkflow \
+  --from-literal=username=postgres \
+  --from-literal=password=your-superuser-password
+
+kubectl create secret generic postgres-app-credentials \
+  --namespace=devworkflow \
+  --from-literal=DATABASE_URL="postgresql://devworkflow:your-secure-password@postgres-rw.devworkflow:5432/devworkflow" \
+  --from-literal=DATABASE_URL_RO="postgresql://devworkflow:your-secure-password@postgres-ro.devworkflow:5432/devworkflow"
+
+# Deploy PostgreSQL
+kubectl apply -k infra/k8s/postgres/primary
 ```
 
-### Step 3: Deploy Primary PostgreSQL (Cluster 1)
+#### Step 3: Deploy Replica PostgreSQL (Cluster 2)
+
+Ensure Skupper is linked between clusters first.
 
 ```bash
-# On Cluster 1 - Deploy as primary
-kubectl apply -f postgres-primary.yaml -n devworkflow
-```
+# Create secrets (same passwords as primary)
+kubectl create namespace devworkflow
+kubectl create secret generic postgres-credentials \
+  --namespace=devworkflow \
+  --from-literal=username=devworkflow \
+  --from-literal=password=your-secure-password \
+  --from-literal=host=postgres-rw.devworkflow.svc \
+  --from-literal=port=5432 \
+  --from-literal=database=devworkflow
 
-### Step 4: Configure Skupper Service Exposure (Cluster 1)
+kubectl create secret generic postgres-superuser \
+  --namespace=devworkflow \
+  --from-literal=username=postgres \
+  --from-literal=password=your-superuser-password
 
-```bash
-# On Cluster 1 - Expose PostgreSQL replication port
-kubectl annotate service postgres-rw -n devworkflow skupper.io/proxy=http
-kubectl annotate service postgres-rw -n devworkflow skcluster.io/expose=true
+kubectl create secret generic postgres-app-credentials \
+  --namespace=devworkflow \
+  --from-literal=DATABASE_URL="postgresql://devworkflow:your-secure-password@postgres-primary.devworkflow:5432/devworkflow" \
+  --from-literal=DATABASE_URL_RO="postgresql://devworkflow:your-secure-password@postgres-ro.devworkflow:5432/devworkflow"
 
-# Or use skupper CLI
-skupper expose service postgres-rw --port 5432 --target-service postgres-rw -n devworkflow
-```
-
-### Step 5: Deploy Replica PostgreSQL (Cluster 2)
-
-```bash
-# On Cluster 2 - Deploy as replica pointing to primary via Skupper
-kubectl apply -f postgres-replica.yaml -n devworkflow
-```
-
-### Step 6: Update Application Database URLs
-
-Update your application to use the appropriate connection strings:
-
-**Cluster 1 (Primary - Read/Write):**
-```
-DATABASE_URL=postgresql://devworkflow:password@postgres-rw.devworkflow:5432/devworkflow
-```
-
-**Cluster 2 (Replica - Read Only or Read/Write via Primary):**
-```
-# Read from local replica
-DATABASE_URL_RO=postgresql://devworkflow:password@postgres-ro.devworkflow:5432/devworkflow
-
-# Write via Skupper to primary (requires network route)
-DATABASE_URL=postgresql://devworkflow:password@postgres-rw.skupper:5432/devworkflow
+# Deploy PostgreSQL
+kubectl apply -k infra/k8s/postgres/replica
 ```
 
 ## High Availability
